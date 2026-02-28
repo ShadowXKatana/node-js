@@ -1,0 +1,5 @@
+- make nest as microservice  
+- add middleware to both express and nest
+- update readme how to run each
+- add docker for each and all
+- error handling

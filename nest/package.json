@@ -1,0 +1,19 @@
+{
+    "name": "nest-microservices",
+    "version": "1.0.0",
+    "description": "NestJS Microservice Architecture — API Gateway + 4 TCP Services",
+    "private": true,
+    "scripts": {
+        "install:all": "cd api-gateway && npm install && cd ../users-service && npm install && cd ../orders-service && npm install && cd ../products-service && npm install && cd ../reviews-service && npm install",
+        "build:gateway": "cd api-gateway && npm run build",
+        "build:users": "cd users-service && npm run build",
+        "build:orders": "cd orders-service && npm run build",
+        "build:products": "cd products-service && npm run build",
+        "build:reviews": "cd reviews-service && npm run build",
+        "dev:gateway": "cd api-gateway && npm run start:dev",
+        "dev:users": "cd users-service && npm run start:dev",
+        "dev:orders": "cd orders-service && npm run start:dev",
+        "dev:products": "cd products-service && npm run start:dev",
+        "dev:reviews": "cd reviews-service && npm run start:dev"
+    }
+}

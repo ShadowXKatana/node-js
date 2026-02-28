@@ -1,0 +1,130 @@
+# =============================================
+# Root Docker Compose — Run Everything
+# Databases + Express + NestJS Microservices
+# =============================================
+
+version: '3.9'
+
+services:
+  # ---- Databases ----
+  postgres:
+    image: postgres:16-alpine
+    container_name: node_example_postgres
+    restart: unless-stopped
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password123
+      POSTGRES_DB: node_example
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init-postgres.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U admin -d node_example']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mongodb:
+    image: mongo:7
+    container_name: node_example_mongo
+    restart: unless-stopped
+    ports:
+      - '27017:27017'
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password123
+      MONGO_INITDB_DATABASE: node_example
+    volumes:
+      - mongo_data:/data/db
+      - ./db/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+    healthcheck:
+      test: ['CMD', 'mongosh', '--eval', "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---- Express (Clean Architecture) ----
+  express-api:
+    build: ./express
+    container_name: express_api
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgresql://admin:password123@postgres:5432/node_example?schema=public
+      MONGODB_URI: mongodb://admin:password123@mongodb:27017/node_example?authSource=admin
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+
+  # ---- NestJS Microservices ----
+  nest-users:
+    build: ./nest/users-service
+    container_name: nest_users
+    restart: unless-stopped
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: admin
+      DB_PASS: password123
+      DB_NAME: node_example
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  nest-orders:
+    build: ./nest/orders-service
+    container_name: nest_orders
+    restart: unless-stopped
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: admin
+      DB_PASS: password123
+      DB_NAME: node_example
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  nest-products:
+    build: ./nest/products-service
+    container_name: nest_products
+    restart: unless-stopped
+    environment:
+      MONGODB_URI: mongodb://admin:password123@mongodb:27017/node_example?authSource=admin
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+  nest-reviews:
+    build: ./nest/reviews-service
+    container_name: nest_reviews
+    restart: unless-stopped
+    environment:
+      MONGODB_URI: mongodb://admin:password123@mongodb:27017/node_example?authSource=admin
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+  nest-gateway:
+    build: ./nest/api-gateway
+    container_name: nest_gateway
+    restart: unless-stopped
+    ports:
+      - '3001:3000'
+    environment:
+      PORT: 3000
+    depends_on:
+      - nest-users
+      - nest-orders
+      - nest-products
+      - nest-reviews
+
+volumes:
+  postgres_data:
+  mongo_data:
