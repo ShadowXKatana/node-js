@@ -6,15 +6,18 @@
 
 ```
 node/
-├── db/                     # Database setup (Docker Compose + seed data)
+├── db/                     # Database setup (init scripts)
 ├── express/                # Express.js — Clean Architecture
+│   ├── Dockerfile
+│   └── docker-compose.yml  # Express + DBs (standalone)
 ├── nest/                   # NestJS — Microservice Architecture
 │   ├── api-gateway/        # HTTP gateway → TCP proxy
 │   ├── users-service/      # TCP microservice (PostgreSQL)
 │   ├── orders-service/     # TCP microservice (PostgreSQL)
 │   ├── products-service/   # TCP microservice (MongoDB)
-│   └── reviews-service/    # TCP microservice (MongoDB)
-├── docker-compose.yml      # Run everything with Docker
+│   ├── reviews-service/    # TCP microservice (MongoDB)
+│   └── docker-compose.yml  # All Nest services + DBs (standalone)
+├── docker-compose.yml      # Everything together
 └── README.md
 ```
 
@@ -25,11 +28,12 @@ node/
 
 ---
 
-## 🚀 Quick Start — Docker (แนะนำ)
+## 🚀 วิธีรัน
 
-รันทุกอย่างด้วยคำสั่งเดียว:
+### ตัวเลือก 1 — Docker: รันทุกอย่างพร้อมกัน
 
 ```bash
+# จาก root ของโปรเจค
 docker-compose up -d
 ```
 
@@ -42,18 +46,53 @@ docker-compose up -d
 
 ---
 
-## 📦 Run Manually
-
-### 1. เริ่ม Databases
+### ตัวเลือก 2 — Docker: รัน Express เท่านั้น
 
 ```bash
-cd db
+cd express
 docker-compose up -d
 ```
 
-### 2. Express.js (Clean Architecture)
+| Service | URL |
+|---|---|
+| Express API | http://localhost:3000 |
+| PostgreSQL | localhost:5432 |
+| MongoDB | localhost:27017 |
+
+หยุด:
+```bash
+docker-compose down
+```
+
+---
+
+### ตัวเลือก 3 — Docker: รัน NestJS เท่านั้น
 
 ```bash
+cd nest
+docker-compose up -d
+```
+
+| Service | URL |
+|---|---|
+| NestJS API Gateway | http://localhost:3001 |
+| PostgreSQL | localhost:5432 |
+| MongoDB | localhost:27017 |
+
+หยุด:
+```bash
+docker-compose down
+```
+
+---
+
+### ตัวเลือก 4 — Dev Mode: รัน Express แบบ local
+
+```bash
+# ขั้นตอนที่ 1: เริ่ม databases
+cd db && docker-compose up -d
+
+# ขั้นตอนที่ 2: รัน Express
 cd express
 npm install
 npx prisma generate
@@ -62,30 +101,35 @@ npm run dev
 
 Express จะรันที่ **http://localhost:3000**
 
-### 3. NestJS (Microservices)
+---
 
-เปิด 5 terminal แยกกัน:
+### ตัวเลือก 5 — Dev Mode: รัน NestJS แบบ local
+
+เปิด **5 terminal** แยกกัน (ต้องเริ่ม microservices ก่อน gateway):
 
 ```bash
-# Terminal 1 — Users Service (TCP port 4001)
+# Terminal 1 — เริ่ม databases (ถ้ายังไม่ได้รัน)
+cd db && docker-compose up -d
+
+# Terminal 2 — Users Service (TCP port 4001)
 cd nest/users-service && npm install && npm run start:dev
 
-# Terminal 2 — Orders Service (TCP port 4002)
+# Terminal 3 — Orders Service (TCP port 4002)
 cd nest/orders-service && npm install && npm run start:dev
 
-# Terminal 3 — Products Service (TCP port 4003)
+# Terminal 4 — Products Service (TCP port 4003)
 cd nest/products-service && npm install && npm run start:dev
 
-# Terminal 4 — Reviews Service (TCP port 4004)
+# Terminal 5 — Reviews Service (TCP port 4004)
 cd nest/reviews-service && npm install && npm run start:dev
 
-# Terminal 5 — API Gateway (HTTP port 3001)
+# Terminal 6 — API Gateway (HTTP port 3000)
 cd nest/api-gateway && npm install && npm run start:dev
 ```
 
-> ⚠️ **ต้องเริ่ม microservices ก่อน gateway** เพื่อให้ TCP connections พร้อมใช้งาน
+> ⚠️ **ต้องเริ่ม microservices ก่อน gateway** เสมอ
 
-NestJS จะรันที่ **http://localhost:3000** (หรือ port ที่กำหนดใน env)
+NestJS API Gateway จะรันที่ **http://localhost:3000**
 
 ---
 
@@ -169,19 +213,18 @@ curl -X POST http://localhost:3000/api/reviews \
 
 ```
 src/
-├── domain/                 # 🟢 Enterprise Business Rules (ไม่มี dependency ใดๆ)
+├── domain/                 # Enterprise Business Rules (ไม่มี dependency)
 │   ├── entities/           # User, Order, Product, Review interfaces
 │   └── repositories/       # Repository interfaces (ports)
-├── application/            # 🔵 Application Business Rules
-│   ├── use-cases/          # Business logic (CreateUser, GetOrders, etc.)
+├── application/            # Application Business Rules
+│   ├── use-cases/          # Business logic
 │   └── dtos/               # Zod validation schemas
-├── infrastructure/         # 🟡 Frameworks & Drivers
+├── infrastructure/         # Frameworks & Drivers
 │   ├── config/             # Database connections
-│   ├── database/mongoose/  # Mongoose models
-│   └── repositories/       # Concrete implementations (adapters)
+│   └── repositories/       # Concrete implementations
 │       ├── prisma/         # PostgreSQL adapters
 │       └── mongoose/       # MongoDB adapters
-└── presentation/           # 🔴 Interface Adapters
+└── presentation/           # Interface Adapters
     ├── controllers/        # HTTP request handlers
     ├── routes/             # Express route definitions
     ├── middlewares/        # Error handler, validation, logging
@@ -196,7 +239,9 @@ src/
 ┌─────────────────────────────────────────────────────┐
 │                  API Gateway (:3000)                 │
 │     HTTP → ClientProxy (TCP) → Microservices        │
-│  [Validation Pipe] [Exception Filter] [Interceptor] │
+│  [LoggerMiddleware] [ValidationPipe]                 │
+│  [RpcExceptionFilter] [AllExceptionsFilter]          │
+│  [LoggingInterceptor]                                │
 └────┬──────────┬──────────┬──────────┬───────────────┘
      │          │          │          │
      ▼          ▼          ▼          ▼
@@ -209,27 +254,36 @@ src/
 └─────────┘ └─────────┘ └──────────┘ └──────────┘
 ```
 
-**Key features:**
-- Each service is independently deployable
-- TCP transport for inter-service communication
-- `@MessagePattern` for request/response
-- `RpcException` for error propagation
-- Global `AllExceptionsFilter` + `LoggingInterceptor` on gateway
-
 ---
 
 ## 🔒 Error Handling
 
 ### Express
-- **Error handler middleware** — catches all errors, returns standardized JSON
-- **Zod validation** — validates request body with detailed field-level errors
-- **Async wrapper** — forwards async errors to error middleware
+| Mechanism | Description |
+|---|---|
+| `errorHandler` middleware | Global catch-all, returns standardized JSON `{success, error}` |
+| `validate(schema)` | Zod validation per route with field-level errors |
+| Async wrapper | Forwards async errors to error middleware |
 
 ### NestJS
-- **ValidationPipe** — validates DTOs with `class-validator` (whitelist + transform)
-- **AllExceptionsFilter** — global catch-all filter with timestamped error responses
-- **LoggingInterceptor** — logs request/response timing
-- **RpcException** — microservice-level errors propagated to gateway
+| Mechanism | Description |
+|---|---|
+| `ValidationPipe` | Validates DTOs with class-validator (whitelist + transform) |
+| `RpcExceptionFilter` | Converts microservice `RpcException` → correct HTTP status (404/400) |
+| `AllExceptionsFilter` | Global catch-all for all other exceptions |
+| `LoggingInterceptor` | Logs request/response timing |
+| `RpcException` (microservices) | Service-level errors propagated to the gateway |
+
+Error response format (both Express & NestJS):
+```json
+{
+  "success": false,
+  "statusCode": 404,
+  "timestamp": "2026-03-01T00:00:00.000Z",
+  "path": "/api/users/999",
+  "error": "User with id 999 not found"
+}
+```
 
 ---
 
@@ -240,17 +294,19 @@ src/
 |---|---|
 | `cors` | Cross-origin requests |
 | `express.json()` | JSON body parser |
-| `requestLogger` | Log incoming requests |
+| `requestLogger` | Log incoming requests (`📥 METHOD /path`) |
 | `validate(schema)` | Zod validation per route |
-| `errorHandler` | Global error catch |
+| `errorHandler` | Global error catch (must be last) |
 
-### NestJS
+### NestJS API Gateway
 | Middleware | Description |
 |---|---|
+| `LoggerMiddleware` | Log all incoming requests with method + URL |
 | `ValidationPipe` | DTO validation (class-validator) |
+| `RpcExceptionFilter` | Map RPC errors to HTTP responses |
 | `AllExceptionsFilter` | Global exception handling |
-| `LoggingInterceptor` | Request/response logging |
-| `CORS` | Cross-origin requests |
+| `LoggingInterceptor` | Request/response timing logs |
+| CORS | Cross-origin requests |
 
 ---
 
@@ -264,24 +320,29 @@ src/
 | **PostgreSQL** | Prisma ORM | TypeORM |
 | **MongoDB** | Mongoose | @nestjs/mongoose |
 | **Validation** | Zod | class-validator |
-| **Error Handling** | Custom middleware | Exception filters |
+| **Error Handling** | Custom middleware | Exception filters + RpcException |
 | **Transport** | HTTP | TCP (inter-service) |
 
 ---
 
 ## 🐳 Docker
 
-### Database only
+### รัน Express เท่านั้น
 ```bash
-cd db && docker-compose up -d
+cd express && docker-compose up -d
 ```
 
-### Everything
+### รัน NestJS เท่านั้น
 ```bash
-docker-compose up -d
+cd nest && docker-compose up -d
 ```
 
-### Build individual services
+### รันทุกอย่าง (Express + NestJS + DBs)
+```bash
+docker-compose up -d        # จาก root
+```
+
+### Build แยก service
 ```bash
 docker build -t express-api ./express
 docker build -t nest-gateway ./nest/api-gateway
@@ -301,10 +362,13 @@ MONGODB_URI=mongodb://admin:password123@localhost:27017/node_example?authSource=
 
 ### NestJS (environment per service)
 ```
+# users-service, orders-service
 DB_HOST=localhost
 DB_PORT=5432
 DB_USER=admin
 DB_PASS=password123
 DB_NAME=node_example
+
+# products-service, reviews-service
 MONGODB_URI=mongodb://admin:password123@localhost:27017/node_example?authSource=admin
 ```
